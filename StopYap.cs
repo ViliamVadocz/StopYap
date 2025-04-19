@@ -111,8 +111,6 @@ public class StopYap
         [HarmonyPrefix]
         public static bool AddChatMessage(string content)
         {
-            Plugin.Log.LogInfo($"UIChat.AddChatMessage: {content}");
-
             MatchCollection matches = regex.Matches(content); // TODO: Maybe replace this with Unity's RichTextParser.
             Match match = matches.FirstOrDefault();
             if (match == null) return true;
