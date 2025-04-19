@@ -13,9 +13,9 @@ public class StopYap
         + "* <b>/mute [name/number]</b> - Mute a player."
         + "* <b>/unmute [name/number]</b> - Unmute a player.";
 
-    private static HashSet<FixedString32Bytes> mutedPlayers = [];
+    private static readonly HashSet<FixedString32Bytes> mutedPlayers = [];
 
-    private static List<Player> matchingPlayers(string name = null, int number = -1)
+    private static List<Player> MatchingPlayers(string name = null, int number = -1)
     {
         List<Player> matching = [];
 
@@ -46,21 +46,32 @@ public class StopYap
         [HarmonyPrefix]
         public static void Client_SendClientChatMessage(string message)
         {
+            UIChat uiChat = NetworkBehaviourSingleton<UIChat>.Instance;
+
+            if (uiChat == null) return;
             if (message == null) return;
             if (!message.StartsWith("/")) return;
+
+            string name;
+            int number;
             string[] words = message.Split();
-            if (words.Length < 1) return;
+            switch (words)
+            {
+                case ["/help"]:
+                    uiChat.AddChatMessage(helpMessage);
+                    return;
+                case ["/mute" or "/unmute", string nameOrNumber]:
+                    name = nameOrNumber;
+                    if (int.TryParse(words[1], out number)) { name = null; } else { number = -1; }
+                    break;
+                case ["/mute" or "/unmute"]:
+                    uiChat.AddChatMessage($"{messagePrefix} Missing a name or number.");
+                    return;
+                default:
+                    return;
+            }
 
-            UIChat uiChat = NetworkBehaviourSingleton<UIChat>.Instance;
-            if (uiChat == null) return;
-
-            if (message.Equals("/help")) { uiChat.AddChatMessage(helpMessage); return; }
-            if (!(words[0].Equals("/mute") || words[0].Equals("/unmute"))) return;
-            if (words.Length != 2) { uiChat.AddChatMessage($"{messagePrefix} Missing a name or number."); return; }
-
-            string name = words[1];
-            if (int.TryParse(words[1], out int number)) { name = null; } else { number = -1; }
-            List<Player> matching = matchingPlayers(name, number);
+            List<Player> matching = MatchingPlayers(name, number);
 
             if (matching.Count == 0) { uiChat.AddChatMessage($"{messagePrefix} There is no matching player."); return; }
             if (matching.Count > 1) { uiChat.AddChatMessage($"{messagePrefix} That matches more than one player."); return; }
@@ -70,34 +81,24 @@ public class StopYap
             number = theOne.Number.Value;
             FixedString32Bytes steamId = theOne.SteamId.Value;
 
-            // TODO: Change confirmations based on whether they were already muted or not.
-            // TODO: Add mute times.
-            // TODO: Refactor to avoid checking for mute/unmute twice.
-            if (words[0].Equals("/mute"))
+            switch (words[0].Equals("/mute"), mutedPlayers.Contains(steamId))
             {
-                if (mutedPlayers.Contains(steamId))
-                {
-                    uiChat.AddChatMessage($"{messagePrefix} <b>#{number} {name}</b> is already muted.");
-                }
-                else
-                {
-                    mutedPlayers.Add(steamId);
-                    uiChat.AddChatMessage($"{messagePrefix} Muted <b>#{number} {name}</b>.");
-                    Plugin.Log.LogInfo($"Muted player: number={number}, name={name}, steamid={steamId}");
-                }
-            }
-            else
-            {
-                if (mutedPlayers.Contains(steamId))
-                {
+                case (false, false):
+                    uiChat.AddChatMessage($"{messagePrefix} <b>#{number} {name}</b> is not muted.");
+                    break;
+                case (false, true):
                     mutedPlayers.Remove(steamId);
                     uiChat.AddChatMessage($"{messagePrefix} Unmuted <b>#{number} {name}</b>.");
                     Plugin.Log.LogInfo($"Unmuted player: number={number}, name={name}, steamid={steamId}");
-                }
-                else
-                {
-                    uiChat.AddChatMessage($"{messagePrefix} <b>#{number} {name}</b> is not muted.");
-                }
+                    break;
+                case (true, false):
+                    mutedPlayers.Add(steamId);
+                    uiChat.AddChatMessage($"{messagePrefix} Muted <b>#{number} {name}</b>.");
+                    Plugin.Log.LogInfo($"Muted player: number={number}, name={name}, steamid={steamId}");
+                    break;
+                case (true, true):
+                    uiChat.AddChatMessage($"{messagePrefix} <b>#{number} {name}</b> is already muted.");
+                    break;
             }
         }
     }
@@ -118,7 +119,7 @@ public class StopYap
 
             int number = int.Parse(match.Groups[1].Value);
             string name = match.Groups[2].Value;
-            List<Player> matching = matchingPlayers(name, number);
+            List<Player> matching = MatchingPlayers(name, number);
 
             if (matching.Where(player => mutedPlayers.Contains(player.SteamId.Value)).Any()) return false;
             return true;
