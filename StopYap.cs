@@ -103,15 +103,17 @@ public class StopYap
         }
     }
 
-    static readonly Regex regex = new(@"^(?:<.+>)*<noparse>#(\d\d?) ([\w\d\s]+)<\/noparse>(?:<.+>)*:");
+    static readonly Regex regex = new(@"^(?:\[TEAM\] )?(?:<.+>)*<noparse>#(\d\d?) ([\w\d\s]+)<\/noparse>(?:<.+>)*:");
 
     [HarmonyPatch(typeof(UIChat), nameof(UIChat.AddChatMessage))]
     public static class UIChatClientAddChatMessage
     {
         [HarmonyPrefix]
-        public static bool AddChatMessage(string content)
+        public static bool AddChatMessage(string message)
         {
-            MatchCollection matches = regex.Matches(content); // TODO: Maybe replace this with Unity's RichTextParser.
+            Plugin.Log.LogDebug($"UIChat.AddChatMessage({message})");
+
+            MatchCollection matches = regex.Matches(message); // TODO: Maybe replace this with Unity's RichTextParser.
             Match match = matches.FirstOrDefault();
             if (match == null) return true;
 
