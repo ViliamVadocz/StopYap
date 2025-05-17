@@ -44,9 +44,9 @@ public class StopYap
     public static class UIChatSendClientChatMessagePatch
     {
         [HarmonyPrefix]
-        public static void Client_SendClientChatMessage(string message)
+        public static void Client_SendClientChatMessage(UIChat __instance, string message)
         {
-            UIChat uiChat = NetworkBehaviourSingleton<UIChat>.Instance;
+            UIChat uiChat = __instance;
 
             if (uiChat == null) return;
             if (message == null) return;
