@@ -8,7 +8,7 @@ public class Mod : IPuckMod
 {
     public const string NAME = "StopYap";
     public const string GUID = $"0x57696c6c.{NAME}";
-    public const string VERSION = "2.0.0";
+    public const string VERSION = "2.0.1";
 
     private readonly Harmony harmony = new Harmony(GUID);
 

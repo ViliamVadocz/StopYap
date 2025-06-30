@@ -108,7 +108,7 @@ public class StopYap
         }
     }
 
-    static readonly Regex regex = new(@"^(?:\[TEAM\] )?(?:<.+>)*<noparse>#(\d\d?) ([\w\d\s]+)<\/noparse>(?:<.+>)*:");
+    static readonly Regex regex = new(@"^(?:\[TEAM\] )?(?:<.+>)?<noparse>#(\d\d?) ([\w\d\s]+)<\/noparse>(?:<.+>)?: <noparse>.*<\/noparse>$");
 
     [HarmonyPatch(typeof(UIChat), nameof(UIChat.AddChatMessage))]
     public static class UIChatClientAddChatMessage
