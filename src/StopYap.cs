@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using HarmonyLib;
 using Unity.Collections;
@@ -10,21 +10,39 @@ public class StopYap
 {
     private const string MESSAGE_PREFIX = "<color=orange><b>StopYap</b></color>";
     private const string HELP_MESSAGE = $"commands:\n"
-        + "* <b>/mute [name/number]</b> - Mute a player."
+        + "* <b>/mute [name/number]</b> - Mute a player.\n"
         + "* <b>/unmute [name/number]</b> - Unmute a player.";
 
     private static readonly HashSet<FixedString32Bytes> mutedPlayers = [];
 
-    private static void sendMessage(UIChat uiChat, object message)
+    private static UIChat uiChat = null;
+
+    private static void sendMessage(object message)
     {
-        uiChat.AddChatMessage($"{MESSAGE_PREFIX} {message}");
+        if (uiChat == null)
+        {
+            Mod.LogError("A UIChat instance has not been saved yet.");
+            return;
+        }
+        ChatMessage chatMessage = new()
+        {
+            SteamID = null,
+            Username = null,
+            Team = null,
+            Content = $"{MESSAGE_PREFIX} {message}",
+            Timestamp = Utils.GetTimestamp(),
+            IsQuickChat = false,
+            IsTeamChat = false,
+            IsSystem = true,
+        };
+        uiChat.AddChatMessage(chatMessage, Units.Metric, false);
     }
 
     private static List<Player> MatchingPlayers(string name = null, int number = -1)
     {
         List<Player> matching = [];
 
-        PlayerManager playerManager = NetworkBehaviourSingleton<PlayerManager>.Instance;
+        PlayerManager playerManager = MonoBehaviourSingleton<PlayerManager>.Instance;
         if (playerManager == null) return matching;
 
         List<Player> players = playerManager.GetPlayers();
@@ -45,41 +63,40 @@ public class StopYap
         return matching;
     }
 
-    [HarmonyPatch(typeof(UIChat), nameof(UIChat.Client_SendClientChatMessage))]
-    public static class UIChatSendClientChatMessagePatch
+    static readonly FieldInfo _uiChat = typeof(UIChatController).GetField("uiChat", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    [HarmonyPatch(typeof(ChatManager), nameof(ChatManager.Client_SendChatMessage))]
+    public static class ChatManagerClientSendChatMessagePatch
     {
         [HarmonyPrefix]
-        public static void Client_SendClientChatMessage(UIChat __instance, string message)
+        public static bool Client_SendChatMessage(string content)
         {
-            UIChat uiChat = __instance;
-
-            if (uiChat == null) return;
-            if (message == null) return;
-            if (!message.StartsWith("/")) return;
+            if (content == null) return true;
+            if (!content.StartsWith("/")) return true;
 
             string name;
             int number;
-            string[] words = message.Split();
+            string[] words = content.Split();
             switch (words)
             {
                 case ["/help"]:
-                    sendMessage(uiChat, HELP_MESSAGE);
-                    return;
+                    sendMessage(HELP_MESSAGE);
+                    return true; // This should stop giving "Unknown command" once it is back.
                 case ["/mute" or "/unmute", string nameOrNumber]:
                     name = nameOrNumber;
                     if (int.TryParse(words[1], out number)) { name = null; } else { number = -1; }
                     break;
                 case ["/mute" or "/unmute"]:
-                    sendMessage(uiChat, "Missing a name or number.");
-                    return;
+                    sendMessage("Missing a name or number.");
+                    return false;
                 default:
-                    return;
+                    return true;
             }
 
             List<Player> matching = MatchingPlayers(name, number);
 
-            if (matching.Count == 0) { sendMessage(uiChat, "There is no matching player."); return; }
-            if (matching.Count > 1) { sendMessage(uiChat, "That matches more than one player."); return; }
+            if (matching.Count == 0) { sendMessage("There is no matching player."); return false; }
+            if (matching.Count > 1) { sendMessage("That matches more than one player."); return false; }
 
             Player theOne = matching[0];
             name = theOne.Username.Value.ToString();
@@ -89,45 +106,37 @@ public class StopYap
             switch (words[0].Equals("/mute"), mutedPlayers.Contains(steamId))
             {
                 case (false, false):
-                    sendMessage(uiChat, $"<b>#{number} {name}</b> is not muted.");
+                    sendMessage($"<b>#{number} {name}</b> is not muted.");
                     break;
                 case (false, true):
                     mutedPlayers.Remove(steamId);
-                    sendMessage(uiChat, $"Unmuted <b>#{number} {name}</b>.");
+                    sendMessage($"Unmuted <b>#{number} {name}</b>.");
                     Mod.LogDebug($"Unmuted player: number={number}, name={name}, steamid={steamId}");
                     break;
                 case (true, false):
                     mutedPlayers.Add(steamId);
-                    sendMessage(uiChat, $"Muted <b>#{number} {name}</b>.");
+                    sendMessage($"Muted <b>#{number} {name}</b>.");
                     Mod.LogDebug($"Muted player: number={number}, name={name}, steamid={steamId}");
                     break;
                 case (true, true):
-                    sendMessage(uiChat, $"<b>#{number} {name}</b> is already muted.");
+                    sendMessage($"<b>#{number} {name}</b> is already muted.");
                     break;
             }
+            return false;
         }
     }
 
-    static readonly Regex regex = new(@"^(?:\[TEAM\] )?(?:<.+>)?<noparse>#(\d\d?) ([\w\d\s]+)<\/noparse>(?:<.+>)?: <noparse>.*<\/noparse>$");
-
     [HarmonyPatch(typeof(UIChat), nameof(UIChat.AddChatMessage))]
-    public static class UIChatClientAddChatMessage
+    public static class UIChatAddChatMessagePatch
     {
         [HarmonyPrefix]
-        public static bool AddChatMessage(string message)
+        public static bool AddChatMessage(UIChat __instance, ChatMessage chatMessage)
         {
-            Mod.LogDebug($"UIChat.AddChatMessage({message})");
-
-            MatchCollection matches = regex.Matches(message); // TODO: Maybe replace this with Unity's RichTextParser.
-            Match match = ((IEnumerable<Match>)matches).FirstOrDefault();
-            if (match == null) return true;
-
-            int number = int.Parse(match.Groups[1].Value);
-            string name = match.Groups[2].Value;
-            List<Player> matching = MatchingPlayers(name, number);
-
-            if (matching.Where(player => mutedPlayers.Contains(player.SteamId.Value)).Any()) return false;
-            return true;
+            uiChat = __instance; // Save the instance for adding chat messages later.
+            string escapedContent = Regex.Escape(chatMessage.Content.ToString());
+            Mod.LogDebug($"ChatManager.AddChatMessage(ChatMessage {{SteamID={chatMessage.SteamID}, Username={chatMessage.Username}, Team={chatMessage.Team}, Content=\"{escapedContent}\", Timestamp={chatMessage.Timestamp}, IsQuickChat={chatMessage.IsQuickChat}, IsTeamChat={chatMessage.IsTeamChat}, IsSystem={chatMessage.IsSystem}}})");
+            if (chatMessage.SteamID == null) return true;
+            return !mutedPlayers.Contains(chatMessage.SteamID.Value);
         }
     }
 }

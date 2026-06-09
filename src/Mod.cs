@@ -4,13 +4,13 @@ using UnityEngine.Rendering;
 
 namespace StopYap;
 
-public class Mod : IPuckMod
+public class Mod : IPuckPlugin
 {
     public const string NAME = "StopYap";
     public const string GUID = $"0x57696c6c.{NAME}";
-    public const string VERSION = "2.0.1";
+    public const string VERSION = "3.0.0";
 
-    private readonly Harmony harmony = new Harmony(GUID);
+    private readonly Harmony harmony = new(GUID);
 
     public bool OnEnable()
     {
